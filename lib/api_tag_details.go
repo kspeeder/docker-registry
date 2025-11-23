@@ -131,7 +131,11 @@ func (r *registryApi) getHeadersForManifestVersion(version uint) (headers map[st
 
 	case 2:
 		headers = map[string]string{
-			"accept": "application/vnd.docker.distribution.manifest.v2+json",
+			"accept": strings.Join([]string{
+				"application/vnd.docker.distribution.manifest.v2+json",
+				"application/vnd.oci.image.manifest.v1+json",
+				"application/vnd.oci.artifact.manifest.v1+json",
+			}, ", "),
 		}
 
 	default:

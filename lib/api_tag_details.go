@@ -73,9 +73,7 @@ func (r *registryApi) GetTagDetails(ctx context.Context, ref Refspec, manifestVe
 		return
 	}
 
-	if apiResponse.Close {
-		defer apiResponse.Body.Close()
-	}
+	defer apiResponse.Body.Close()
 
 	switch apiResponse.StatusCode {
 	case http.StatusForbidden, http.StatusUnauthorized:
@@ -87,7 +85,7 @@ func (r *registryApi) GetTagDetails(ctx context.Context, ref Refspec, manifestVe
 	case http.StatusOK:
 
 	default:
-		err = newInvalidStatusCodeError(apiResponse.StatusCode)
+		err = invalidStatusCodeErrorFromResponse(apiResponse)
 	}
 
 	if err != nil {
@@ -126,17 +124,24 @@ func (r *registryApi) GetTagDetails(ctx context.Context, ref Refspec, manifestVe
 }
 
 func (r *registryApi) getHeadersForManifestVersion(version uint) (headers map[string]string, err error) {
+	acceptHeaders := strings.Join([]string{
+		"application/vnd.oci.artifact.manifest.v1+json",
+		"application/vnd.oci.image.manifest.v1+json",
+		"application/vnd.docker.distribution.manifest.v2+json",
+		"application/vnd.oci.image.index.v1+json",
+		"application/vnd.docker.distribution.manifest.list.v2+json",
+		"*/*",
+	}, ", ")
+
 	switch version {
 	case 1:
-		headers = nil
+		headers = map[string]string{
+			"accept": acceptHeaders,
+		}
 
 	case 2:
 		headers = map[string]string{
-			"accept": strings.Join([]string{
-				"application/vnd.docker.distribution.manifest.v2+json",
-				"application/vnd.oci.image.manifest.v1+json",
-				"application/vnd.oci.artifact.manifest.v1+json",
-			}, ", "),
+			"accept": acceptHeaders,
 		}
 
 	default:

@@ -2,6 +2,9 @@ package lib
 
 import (
 	"fmt"
+	"io"
+	"net/http"
+	"strings"
 )
 
 type AutorizationError string
@@ -48,4 +51,22 @@ func newNotFoundError(description string) error {
 
 func newInvalidRequestError(description string) error {
 	return InvalidRequestError(description)
+}
+
+func invalidStatusCodeErrorFromResponse(resp *http.Response) error {
+	if resp == nil {
+		return InvalidStatusCodeError("invalid API response status")
+	}
+
+	msg := fmt.Sprintf("invalid API response status %d", resp.StatusCode)
+
+	if resp.Body != nil {
+		if data, err := io.ReadAll(io.LimitReader(resp.Body, 2048)); err == nil {
+			if trimmed := strings.TrimSpace(string(data)); trimmed != "" {
+				msg = fmt.Sprintf("%s: %s", msg, trimmed)
+			}
+		}
+	}
+
+	return InvalidStatusCodeError(msg)
 }

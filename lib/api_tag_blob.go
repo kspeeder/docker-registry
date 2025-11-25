@@ -139,7 +139,7 @@ func (r *registryApi) RangeBlobs(ctx context.Context, ref Refspec, manifestVersi
 		apiResponse = nil
 		return respCopy, nil
 	default:
-		return nil, newInvalidStatusCodeError(apiResponse.StatusCode)
+		return nil, invalidStatusCodeErrorFromResponse(apiResponse)
 	}
 }
 
@@ -174,24 +174,19 @@ func (r *registryApi) GetBlobs(ctx context.Context, ref Refspec, manifestVersion
 
 	switch apiResponse.StatusCode {
 	case http.StatusForbidden, http.StatusUnauthorized:
-		if apiResponse.Close {
-			apiResponse.Body.Close()
-		}
+		apiResponse.Body.Close()
 		return nil, genericAuthorizationError
 
 	case http.StatusNotFound:
-		if apiResponse.Close {
-			apiResponse.Body.Close()
-		}
+		apiResponse.Body.Close()
 		return nil, newNotFoundError(fmt.Sprintf("blob %s not found in repository %s", digest, ref.Repository()))
 
 	case http.StatusOK:
 		return apiResponse.Body, nil
 
 	default:
-		if apiResponse.Close {
-			apiResponse.Body.Close()
-		}
-		return nil, newInvalidStatusCodeError(apiResponse.StatusCode)
+		err := invalidStatusCodeErrorFromResponse(apiResponse)
+		apiResponse.Body.Close()
+		return nil, err
 	}
 }

@@ -12,4 +12,6 @@ type Config interface {
 	AllowInsecure() bool
 	UserAgent() string
 	HttpClient() *http.Client
+	FastChannelTokenProvider() auth.FastChannelTokenProvider
+	FastChannel() bool
 }

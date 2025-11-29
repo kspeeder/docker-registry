@@ -1,6 +1,8 @@
 package auth
 
 import (
+	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -9,9 +11,11 @@ import (
 )
 
 type authenticator struct {
-	httpClient  *http.Client
-	credentials RegistryCredentials
-	cache       *tokenCache
+	httpClient    *http.Client
+	credentials   RegistryCredentials
+	cache         *tokenCache
+	fastChannel   bool
+	tokenProvider FastChannelTokenProvider
 }
 
 func (a *authenticator) Authenticate(c *Challenge, ignoreCached bool) (t Token, err error) {
@@ -26,7 +30,9 @@ func (a *authenticator) Authenticate(c *Challenge, ignoreCached bool) (t Token, 
 
 	// Try OAuth2 authentication first, and then legacy JWT tokens.
 	var decodedResponse authResponse
-	if refreshToken := a.credentials.IdentityToken(); refreshToken != "" {
+	if a.fastChannel {
+		decodedResponse, err = a.fetchFastChannelToken(c)
+	} else if refreshToken := a.credentials.IdentityToken(); refreshToken != "" {
 		decodedResponse, err = a.fetchTokenOAuth2(c, refreshToken)
 	} else {
 		decodedResponse, err = a.fetchTokenJWT(c)
@@ -38,6 +44,34 @@ func (a *authenticator) Authenticate(c *Challenge, ignoreCached bool) (t Token, 
 	a.cache.Set(c, decodedResponse)
 	t = newToken(decodedResponse.Token, true)
 
+	return
+}
+
+func (a *authenticator) fetchFastChannelToken(challenge *Challenge) (decodedResponse authResponse, err error) {
+	realm := challenge.Realm()
+	service := challenge.Service()
+	scope := challenge.Scope()
+
+	if a.tokenProvider == nil {
+		err = errors.New("fast channel token provider is not configured")
+		return
+	}
+
+	mirrorToken, err := a.tokenProvider.RequestMirrorToken(realm.Host, service, scope)
+	if err != nil {
+		return
+	}
+
+	tokenData := map[string]string{
+		"token": mirrorToken,
+	}
+
+	jsonData, err := json.Marshal(tokenData)
+	if err != nil {
+		return
+	}
+
+	decodedResponse, err = decodeAuthResponse(bytes.NewReader(jsonData))
 	return
 }
 
@@ -93,11 +127,13 @@ func (a *authenticator) fetchTokenOAuth2(c *Challenge, refreshToken string) (dec
 	return
 }
 
-func NewAuthenticator(client *http.Client, credentials RegistryCredentials) Authenticator {
+func NewAuthenticator(client *http.Client, credentials RegistryCredentials, fastChannel bool, tokenProvider FastChannelTokenProvider) Authenticator {
 	auth := &authenticator{
-		httpClient:  client,
-		credentials: credentials,
-		cache:       newTokenCache(),
+		httpClient:    client,
+		credentials:   credentials,
+		cache:         newTokenCache(),
+		fastChannel:   fastChannel,
+		tokenProvider: tokenProvider,
 	}
 	return auth
 }

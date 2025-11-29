@@ -190,7 +190,12 @@ func NewTokenAuthConnector(cfg Config) Connector {
 		connector.httpClient = createHttpClient(cfg)
 	}
 
-	connector.authenticator = auth.NewAuthenticator(connector.httpClient, cfg.Credentials())
+	connector.authenticator = auth.NewAuthenticator(
+		connector.httpClient,
+		cfg.Credentials(),
+		cfg.FastChannel(),
+		cfg.FastChannelTokenProvider(),
+	)
 
 	//setInvalidTokenForTest(&connector)
 

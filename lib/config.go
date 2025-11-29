@@ -39,6 +39,8 @@ type Config struct {
 	allowInsecure         bool
 	userAgent             string
 	httpClient            *http.Client
+	fastChannel           bool
+	tokenProvider         auth.FastChannelTokenProvider
 }
 
 func (u *urlValue) String() string {
@@ -120,6 +122,22 @@ func (c *Config) SetHttpClient(client *http.Client) {
 
 func (c *Config) HttpClient() *http.Client {
 	return c.httpClient
+}
+
+func (c *Config) SetFastChannel(fastChannel bool) {
+	c.fastChannel = fastChannel
+}
+
+func (c *Config) FastChannel() bool {
+	return c.fastChannel
+}
+
+func (c *Config) SetFastChannelTokenProvider(tokenProvider auth.FastChannelTokenProvider) {
+	c.tokenProvider = tokenProvider
+}
+
+func (c *Config) FastChannelTokenProvider() auth.FastChannelTokenProvider {
+	return c.tokenProvider
 }
 
 func (c *Config) Validate() error {

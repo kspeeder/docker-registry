@@ -4,11 +4,10 @@ import (
 	"fmt"
 )
 
-const (
-	APPLICATION_NAME = "docker-ls"
-)
+const APPLICATION_NAME = "docker-ls"
 
-var staticVersion string = "not available --- use go generate and rebuild"
+// bump this when you cut a release tag so clients can match the library version
+var staticVersion string = "v0.5.2"
 var dynamicVersion *string
 
 var dynamicShortVersion *string
@@ -28,5 +27,3 @@ func ApplicationName() string {
 
 	return fmt.Sprintf("%s/%s", APPLICATION_NAME, *dynamicShortVersion)
 }
-
-//go:generate go run ../generators/version.go -out dynamic_version.go -package lib

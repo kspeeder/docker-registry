@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -46,6 +48,12 @@ func (r *registryApi) BlobInfo(ctx context.Context, ref Refspec, manifestVersion
 	} */
 
 	if resp.StatusCode != http.StatusOK {
+		if shouldFallbackBlobInfoToRangeGet(resp.StatusCode) {
+			size, modTime, header, fallbackErr := r.blobInfoWithRangeGet(ctx, ref.Repository(), url, headers)
+			if fallbackErr == nil {
+				return size, modTime, header, nil
+			}
+		}
 		return 0, time.Time{}, nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
 	}
 
@@ -66,6 +74,104 @@ func (r *registryApi) BlobInfo(ctx context.Context, ref Refspec, manifestVersion
 	}
 
 	return size, lastModified, resp.Header, nil
+}
+
+func shouldFallbackBlobInfoToRangeGet(statusCode int) bool {
+	switch statusCode {
+	case http.StatusNotFound, http.StatusMethodNotAllowed, http.StatusNotImplemented:
+		return true
+	default:
+		return false
+	}
+}
+
+func (r *registryApi) blobInfoWithRangeGet(ctx context.Context, repository string, url *url.URL, headers map[string]string) (int64, time.Time, http.Header, error) {
+	rangeHeaders := make(map[string]string, len(headers)+1)
+	for k, v := range headers {
+		rangeHeaders[k] = v
+	}
+	rangeHeaders["Range"] = "bytes=0-0"
+
+	resp, err := r.getFollowingRedirects(ctx, url, rangeHeaders, cacheHintBlob(repository))
+	if err != nil {
+		return 0, time.Time{}, nil, err
+	}
+	defer resp.Body.Close()
+
+	var size int64
+	switch resp.StatusCode {
+	case http.StatusPartialContent:
+		size, err = parseContentRangeSize(resp.Header.Get("Content-Range"))
+		if err != nil {
+			return 0, time.Time{}, nil, err
+		}
+	case http.StatusOK:
+		size, err = strconv.ParseInt(resp.Header.Get("Content-Length"), 10, 64)
+		if err != nil {
+			return 0, time.Time{}, nil, fmt.Errorf("invalid Content-Length: %v", err)
+		}
+	default:
+		return 0, time.Time{}, nil, fmt.Errorf("unexpected fallback status code: %d", resp.StatusCode)
+	}
+
+	lastModified, err := time.Parse(time.RFC1123, resp.Header.Get("Last-Modified"))
+	if err != nil {
+		return size, time.Time{}, resp.Header, nil
+	}
+	return size, lastModified, resp.Header, nil
+}
+
+func (r *registryApi) getFollowingRedirects(ctx context.Context, url *url.URL, headers map[string]string, hint string) (*http.Response, error) {
+	currentURL := url
+	currentHint := hint
+	for redirects := 0; ; redirects++ {
+		resp, err := r.connector.Get(ctx, currentURL, headers, currentHint)
+		if err != nil {
+			return nil, err
+		}
+		if !isRedirectStatus(resp.StatusCode) {
+			return resp, nil
+		}
+		location := resp.Header.Get("Location")
+		resp.Body.Close()
+		if location == "" {
+			return nil, fmt.Errorf("redirect missing Location")
+		}
+		if redirects >= 3 {
+			return nil, fmt.Errorf("redirect limit exceeded")
+		}
+		nextURL, err := currentURL.Parse(location)
+		if err != nil {
+			return nil, fmt.Errorf("parse redirect Location: %w", err)
+		}
+		currentURL = nextURL
+		currentHint = ""
+	}
+}
+
+func isRedirectStatus(statusCode int) bool {
+	switch statusCode {
+	case http.StatusMovedPermanently, http.StatusFound, http.StatusSeeOther, http.StatusTemporaryRedirect, http.StatusPermanentRedirect:
+		return true
+	default:
+		return false
+	}
+}
+
+func parseContentRangeSize(contentRange string) (int64, error) {
+	slash := strings.LastIndex(contentRange, "/")
+	if slash == -1 || slash == len(contentRange)-1 {
+		return 0, fmt.Errorf("invalid Content-Range: %s", contentRange)
+	}
+	total := strings.TrimSpace(contentRange[slash+1:])
+	if total == "*" {
+		return 0, fmt.Errorf("invalid Content-Range total: %s", contentRange)
+	}
+	size, err := strconv.ParseInt(total, 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("invalid Content-Range total: %v", err)
+	}
+	return size, nil
 }
 
 func (r *registryApi) RangeBlobs(ctx context.Context, ref Refspec, manifestVersion uint, digest string, start, end int64, extraHeaders map[string]string) (*http.Response, error) {
@@ -91,7 +197,7 @@ func (r *registryApi) RangeBlobs(ctx context.Context, ref Refspec, manifestVersi
 		}
 	}
 
-	apiResponse, err := r.connector.Get(
+	apiResponse, err := r.getFollowingRedirects(
 		ctx,
 		url,
 		headers,

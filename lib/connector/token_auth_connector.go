@@ -157,6 +157,9 @@ func repositoryPathFromRegistryURLPath(reqUrl string) string {
 	if len(parts) < 4 || parts[0] != "v2" {
 		return ""
 	}
+	if len(parts) >= 4 && parts[len(parts)-2] == "tags" && parts[len(parts)-1] == "list" {
+		return strings.Join(parts[1:len(parts)-2], "/")
+	}
 	for i := len(parts) - 2; i >= 2; i-- {
 		switch parts[i] {
 		case "manifests", "blobs":

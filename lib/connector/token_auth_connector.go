@@ -139,17 +139,31 @@ func getAuthenticate(reqUrl, auth string) string {
 	if strings.Contains(auth, "scope") {
 		return auth
 	}
-	reqStrs := strings.SplitN(reqUrl, "/", 5)
-	if len(reqStrs) < 5 {
+	repository := repositoryPathFromRegistryURLPath(reqUrl)
+	if repository == "" {
 		return auth
 	}
 	match := challengeRegex2.FindAllStringSubmatch(auth, -1)
 	if len(match) == 1 {
-		newAuth := fmt.Sprintf("%s,scope=\"repository:%s/%s:pull\"", auth, reqStrs[2], reqStrs[3])
+		newAuth := fmt.Sprintf("%s,scope=\"repository:%s:pull\"", auth, repository)
 		//fmt.Println("Change to", newAuth)
 		return newAuth
 	}
 	return auth
+}
+
+func repositoryPathFromRegistryURLPath(reqUrl string) string {
+	parts := strings.Split(strings.Trim(reqUrl, "/"), "/")
+	if len(parts) < 4 || parts[0] != "v2" {
+		return ""
+	}
+	for i := len(parts) - 2; i >= 2; i-- {
+		switch parts[i] {
+		case "manifests", "blobs":
+			return strings.Join(parts[1:i], "/")
+		}
+	}
+	return ""
 }
 
 func (r *tokenAuthConnector) attemptRequestWithToken(request *http.Request, token auth.Token) (*http.Response, error) {

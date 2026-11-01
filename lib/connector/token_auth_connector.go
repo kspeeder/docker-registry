@@ -77,9 +77,9 @@ func (r *tokenAuthConnector) Request(
 		r.stat.CacheFailAtApiLevel()
 	}
 
-	if resp.Close {
-		resp.Body.Close()
-	}
+	// This challenge is consumed here, regardless of HTTP keep-alive policy.
+	// Closing also releases any transport-level ownership of the old route.
+	resp.Body.Close()
 
 	authenticate := getAuthenticate(request.URL.Path, resp.Header.Get("www-authenticate"))
 	challenge, err := auth.ParseChallenge(authenticate)
@@ -112,6 +112,8 @@ func (r *tokenAuthConnector) Request(
 		!token.Fresh() {
 
 		r.stat.CacheFailAtAuthLevel()
+		response.Body.Close()
+		response = nil
 
 		token, err = r.authenticator.Authenticate(challenge, true)
 

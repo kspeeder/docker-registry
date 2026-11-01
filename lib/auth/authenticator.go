@@ -93,9 +93,7 @@ func (a *authenticator) fetchTokenJWT(c *Challenge) (decodedResponse authRespons
 		return
 	}
 
-	if authResponse.Close {
-		defer authResponse.Body.Close()
-	}
+	defer authResponse.Body.Close()
 
 	if authResponse.StatusCode != http.StatusOK {
 		err = errors.New(fmt.Sprintf("authentication against auth server failed with code %d", authResponse.StatusCode))
@@ -117,6 +115,8 @@ func (a *authenticator) fetchTokenOAuth2(c *Challenge, refreshToken string) (dec
 	if err != nil {
 		return
 	}
+
+	defer authResponse.Body.Close()
 
 	if authResponse.StatusCode != http.StatusOK {
 		err = errors.New(fmt.Sprintf("OAuth2 authentication against auth server failed with code %d", authResponse.StatusCode))

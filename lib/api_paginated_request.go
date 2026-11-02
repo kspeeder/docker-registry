@@ -33,8 +33,7 @@ func (r *registryApi) executePaginatedRequest(ctx paginatedRequestContext, url *
 	}
 
 	if err == nil {
-		// Every response consumed by pagination is owned here, including when
-		// the transport keeps the underlying connection alive.
+		// The page is consumed here, independently of connection reuse.
 		close = true
 		err = ctx.validateApiResponse(response, initialRequest)
 	}

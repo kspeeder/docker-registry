@@ -106,6 +106,8 @@ func (r *registryApi) blobInfoWithRangeGet(ctx context.Context, repository strin
 
 	var size int64
 	switch resp.StatusCode {
+	case http.StatusTooManyRequests:
+		return 0, time.Time{}, nil, &rateLimitError{retryAfter: resp.Header.Get("Retry-After")}
 	case http.StatusPartialContent:
 		size, err = parseContentRangeSize(resp.Header.Get("Content-Range"))
 		if err != nil {

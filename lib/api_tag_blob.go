@@ -52,6 +52,9 @@ func (r *registryApi) BlobInfo(ctx context.Context, ref Refspec, manifestVersion
 	} */
 
 	if resp.StatusCode != http.StatusOK {
+		if resp.StatusCode == http.StatusTooManyRequests {
+			return 0, time.Time{}, nil, &rateLimitError{retryAfter: resp.Header.Get("Retry-After")}
+		}
 		if shouldFallbackBlobInfoToRangeGet(resp.StatusCode) {
 			resp.Body.Close()
 			resp = nil
@@ -223,6 +226,8 @@ func (r *registryApi) RangeBlobs(ctx context.Context, ref Refspec, manifestVersi
 	} */
 
 	switch apiResponse.StatusCode {
+	case http.StatusTooManyRequests:
+		return nil, &rateLimitError{retryAfter: apiResponse.Header.Get("Retry-After")}
 	case http.StatusForbidden, http.StatusUnauthorized:
 		return nil, genericAuthorizationError
 

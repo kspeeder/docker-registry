@@ -28,6 +28,16 @@ func (e RateLimitError) RetryAfter() string { return e.retryAfter }
 var genericAuthorizationError AutorizationError = "authorization rejected by registry"
 var genericMalformedResponseError MalformedResponseError = "malformed response"
 
+// Preserve quota metadata through the error path without retaining a response
+// body, credentials or an upstream error page. Existing classification still
+// finds InvalidStatusCodeError through errors.As.
+type rateLimitError struct{ retryAfter string }
+
+func (e *rateLimitError) Error() string      { return "upstream rate limited" }
+func (e *rateLimitError) HTTPStatus() int    { return http.StatusTooManyRequests }
+func (e *rateLimitError) RetryAfter() string { return e.retryAfter }
+func (e *rateLimitError) Unwrap() error      { return newInvalidStatusCodeError(http.StatusTooManyRequests) }
+
 func (e AutorizationError) Error() string {
 	return string(e)
 }

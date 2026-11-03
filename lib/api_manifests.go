@@ -54,6 +54,8 @@ func (r *registryApi) Manifests(ctx context.Context, head bool, ref Refspec, man
 
 	case http.StatusNotFound:
 		return nil, newNotFoundError(fmt.Sprintf("manifest %s not found in repository %s", ref.Reference(), ref.Repository()))
+	case http.StatusTooManyRequests:
+		return nil, &rateLimitError{retryAfter: apiResponse.Header.Get("Retry-After")}
 	case http.StatusOK:
 		respCopy := apiResponse
 		apiResponse = nil

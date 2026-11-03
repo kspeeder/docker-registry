@@ -51,3 +51,31 @@ func TestBlobRateLimitPreservesRetryAfter(t *testing.T) {
 		}
 	}
 }
+
+func TestManifestRateLimitPreservesRetryAfter(t *testing.T) {
+	upstream := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Retry-After", "10")
+		w.WriteHeader(429)
+	}))
+	defer upstream.Close()
+	cfg := NewConfig()
+	u, _ := url.Parse(upstream.URL)
+	cfg.SetUrl(*u)
+	cfg.SetHttpClient(upstream.Client())
+	api, err := NewRegistryApi(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ref := NewRefspec("owner/image", "latest")
+	for _, head := range []bool{false, true} {
+		_, err := api.Manifests(context.Background(), head, ref, 2, nil)
+		var quota interface {
+			error
+			HTTPStatus() int
+			RetryAfter() string
+		}
+		if !errors.As(err, &quota) || quota.HTTPStatus() != 429 || quota.RetryAfter() != "10" {
+			t.Fatalf("manifest head=%t quota lost: %T %v", head, err, err)
+		}
+	}
+}

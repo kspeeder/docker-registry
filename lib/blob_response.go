@@ -62,7 +62,11 @@ func ValidateBlobResponse(resp *http.Response, start, end int64) error {
 			return MalformedResponseError("invalid blob range total")
 		}
 	}
-	if end > 0 && last != end-1 || end == -1 && (total < 0 || last != total-1) {
+	expectedLast := end - 1
+	if end > 0 && total >= 0 && total < end {
+		expectedLast = total - 1
+	}
+	if end > 0 && last != expectedLast || end == -1 && (total < 0 || last != total-1) {
 		return MalformedResponseError("blob range end does not match the request")
 	}
 	length := last - first + 1

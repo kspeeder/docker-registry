@@ -59,9 +59,10 @@ func (c *blobInfoFallbackConnector) Get(ctx context.Context, u *url.URL, headers
 		header = c.getResponses[idx].header
 	}
 	return &http.Response{
-		StatusCode: status,
-		Header:     header.Clone(),
-		Body:       io.NopCloser(http.NoBody),
+		StatusCode:    status,
+		ContentLength: -1,
+		Header:        header.Clone(),
+		Body:          io.NopCloser(http.NoBody),
 	}, nil
 }
 

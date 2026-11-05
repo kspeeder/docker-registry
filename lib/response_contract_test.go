@@ -181,3 +181,24 @@ func TestPaginationAndDeleteClosePersistentResponseBodies(t *testing.T) {
 		})
 	}
 }
+
+type unreadResponseBody struct{ reads, closes int }
+
+func (b *unreadResponseBody) Read([]byte) (int, error) {
+	b.reads++
+	return 0, errors.New("body must remain unread")
+}
+func (b *unreadResponseBody) Close() error { b.closes++; return nil }
+
+func TestBlobResponseValidationOnlyInspectsHeaders(t *testing.T) {
+	for _, status := range []int{403, 404, 429, 500, 503} {
+		body := &unreadResponseBody{}
+		resp := &http.Response{StatusCode: status, Header: make(http.Header), Body: body}
+		if err := ValidateBlobResponse(resp, 4, 8); err == nil {
+			t.Errorf("status %d was accepted", status)
+		}
+		if body.reads != 0 || body.closes != 0 {
+			t.Errorf("status %d: validation read=%d closed=%d", status, body.reads, body.closes)
+		}
+	}
+}

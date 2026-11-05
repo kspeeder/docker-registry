@@ -59,6 +59,6 @@ func (r *registryApi) Manifests(ctx context.Context, head bool, ref Refspec, man
 		apiResponse = nil
 		return respCopy, nil
 	default:
-		return nil, newInvalidStatusCodeError(apiResponse.StatusCode)
+		return nil, statusCodeErrorFromResponse(apiResponse)
 	}
 }

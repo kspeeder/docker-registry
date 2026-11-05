@@ -38,7 +38,11 @@ func (r *registryApi) BlobInfo(ctx context.Context, ref Refspec, manifestVersion
 	if err != nil {
 		return 0, time.Time{}, nil, err
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if resp != nil {
+			resp.Body.Close()
+		}
+	}()
 
 	/* if resp != nil {
 		b, err := httputil.DumpResponse(resp, false)
@@ -49,12 +53,11 @@ func (r *registryApi) BlobInfo(ctx context.Context, ref Refspec, manifestVersion
 
 	if resp.StatusCode != http.StatusOK {
 		if shouldFallbackBlobInfoToRangeGet(resp.StatusCode) {
-			size, modTime, header, fallbackErr := r.blobInfoWithRangeGet(ctx, ref.Repository(), url, headers)
-			if fallbackErr == nil {
-				return size, modTime, header, nil
-			}
+			resp.Body.Close()
+			resp = nil
+			return r.blobInfoWithRangeGet(ctx, ref.Repository(), url, headers)
 		}
-		return 0, time.Time{}, nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+		return 0, time.Time{}, resp.Header, statusCodeErrorFromResponse(resp)
 	}
 
 	contentLength := resp.Header.Get("Content-Length")
@@ -111,7 +114,7 @@ func (r *registryApi) blobInfoWithRangeGet(ctx context.Context, repository strin
 			return 0, time.Time{}, nil, fmt.Errorf("invalid Content-Length: %v", err)
 		}
 	default:
-		return 0, time.Time{}, nil, fmt.Errorf("unexpected fallback status code: %d", resp.StatusCode)
+		return 0, time.Time{}, resp.Header, statusCodeErrorFromResponse(resp)
 	}
 
 	lastModified, err := time.Parse(time.RFC1123, resp.Header.Get("Last-Modified"))
@@ -176,7 +179,7 @@ func parseContentRangeSize(contentRange string) (int64, error) {
 
 func (r *registryApi) RangeBlobs(ctx context.Context, ref Refspec, manifestVersion uint, digest string, start, end int64, extraHeaders map[string]string) (*http.Response, error) {
 	// Implementation of GetBlobs method
-	if ref.Repository() == "" || ref.Reference() == "" || digest == "" || (end != -1 && start >= end) {
+	if ref.Repository() == "" || ref.Reference() == "" || digest == "" || start < 0 || (end != -1 && start >= end) {
 		return nil, errors.New("invalid parameters: repository, reference and digest must be non-empty")
 	}
 
@@ -186,10 +189,10 @@ func (r *registryApi) RangeBlobs(ctx context.Context, ref Refspec, manifestVersi
 		return nil, err
 	}
 	// Set Range header in format "bytes=start-end"
-	var useRange bool
 	if end > 0 {
 		headers["Range"] = fmt.Sprintf("bytes=%d-%d", start, end-1)
-		useRange = true
+	} else if start > 0 {
+		headers["Range"] = fmt.Sprintf("bytes=%d-", start)
 	}
 	if len(extraHeaders) > 0 {
 		for k, v := range extraHeaders {
@@ -221,32 +224,17 @@ func (r *registryApi) RangeBlobs(ctx context.Context, ref Refspec, manifestVersi
 
 	switch apiResponse.StatusCode {
 	case http.StatusForbidden, http.StatusUnauthorized:
-		if apiResponse.Close {
-			apiResponse.Body.Close()
-		}
 		return nil, genericAuthorizationError
 
 	case http.StatusNotFound:
-		if apiResponse.Close {
-			apiResponse.Body.Close()
-		}
 		return nil, newNotFoundError(fmt.Sprintf("blob %s not found in repository %s", digest, ref.Repository()))
-	case http.StatusOK:
-		// Got 200 response with range request, should be 206
-		if useRange {
-			apiResponse.Body.Close()
-			return nil, errors.New("got 200 response with range request")
-		}
-		respCopy := apiResponse
-		apiResponse = nil
-		return respCopy, nil
-	case http.StatusPartialContent:
-		respCopy := apiResponse
-		apiResponse = nil
-		return respCopy, nil
-	default:
-		return nil, invalidStatusCodeErrorFromResponse(apiResponse)
 	}
+	if err := ValidateBlobResponse(apiResponse, start, end); err != nil {
+		return nil, err
+	}
+	respCopy := apiResponse
+	apiResponse = nil
+	return respCopy, nil
 }
 
 func (r *registryApi) GetBlobs(ctx context.Context, ref Refspec, manifestVersion uint, digest string) (io.ReadCloser, error) {

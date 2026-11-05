@@ -16,6 +16,7 @@ func (r *registryApi) DeleteTag(ref Refspec) (err error) {
 	if err != nil {
 		return
 	}
+	defer response.Body.Close()
 
 	switch response.StatusCode {
 	case http.StatusForbidden, http.StatusUnauthorized:

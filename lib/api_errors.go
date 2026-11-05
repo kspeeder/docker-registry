@@ -14,6 +14,17 @@ type InvalidStatusCodeError string
 type NotFoundError string
 type InvalidRequestError string
 
+// RateLimitError keeps quota metadata available through wrapped registry errors.
+// Its message deliberately excludes the upstream response body.
+type RateLimitError struct {
+	retryAfter string
+}
+
+func (e RateLimitError) Error() string      { return e.Unwrap().Error() }
+func (e RateLimitError) Unwrap() error      { return newInvalidStatusCodeError(http.StatusTooManyRequests) }
+func (e RateLimitError) HTTPStatus() int    { return http.StatusTooManyRequests }
+func (e RateLimitError) RetryAfter() string { return e.retryAfter }
+
 var genericAuthorizationError AutorizationError = "authorization rejected by registry"
 var genericMalformedResponseError MalformedResponseError = "malformed response"
 
@@ -53,9 +64,19 @@ func newInvalidRequestError(description string) error {
 	return InvalidRequestError(description)
 }
 
+func statusCodeErrorFromResponse(resp *http.Response) error {
+	if resp.StatusCode == http.StatusTooManyRequests {
+		return RateLimitError{retryAfter: resp.Header.Get("Retry-After")}
+	}
+	return newInvalidStatusCodeError(resp.StatusCode)
+}
+
 func invalidStatusCodeErrorFromResponse(resp *http.Response) error {
 	if resp == nil {
 		return InvalidStatusCodeError("invalid API response status")
+	}
+	if resp.StatusCode == http.StatusTooManyRequests {
+		return statusCodeErrorFromResponse(resp)
 	}
 
 	msg := fmt.Sprintf("invalid API response status %d", resp.StatusCode)
